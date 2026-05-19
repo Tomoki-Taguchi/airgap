@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AIRGAP TRANSFER</title>
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
   <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -750,14 +750,41 @@ function updateChunk(v) {
 // QR SENDER
 // ────────────────────────────────────────────────────────────
 
-// Generate a single QR frame as a PNG data URL (Promise-based, no async DOM hacks)
+// Generate a single QR frame as a PNG data URL.
+// Uses qrcode-generator (pure sync JS) → draws to an offscreen canvas → returns data URL.
 function qrToDataURL(text) {
-  return QRCode.toDataURL(text, {
-    width: 300,
-    margin: 2,
-    errorCorrectionLevel: 'L',
-    color: { dark: '#003300', light: '#f0fff4' }
-  });
+  try {
+    // typeNumber 0 = auto-detect minimum version
+    const qr = qrcode(0, 'L');
+    qr.addData(text, 'Byte');
+    qr.make();
+
+    const mc   = qr.getModuleCount();
+    const cell = Math.max(3, Math.floor(280 / mc));
+    const margin = cell * 4;
+    const size = mc * cell + margin * 2;
+
+    const cv  = document.createElement('canvas');
+    cv.width  = size;
+    cv.height = size;
+    const ctx = cv.getContext('2d');
+
+    ctx.fillStyle = '#f0fff4';
+    ctx.fillRect(0, 0, size, size);
+    ctx.fillStyle = '#003300';
+
+    for (let r = 0; r < mc; r++) {
+      for (let c = 0; c < mc; c++) {
+        if (qr.isDark(r, c)) {
+          ctx.fillRect(margin + c * cell, margin + r * cell, cell, cell);
+        }
+      }
+    }
+
+    return Promise.resolve(cv.toDataURL('image/png'));
+  } catch(e) {
+    return Promise.reject(e);
+  }
 }
 
 async function startQR() {
