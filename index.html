@@ -1,0 +1,1232 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AIRGAP TRANSFER</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+  <style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:      #07090c;
+  --bg2:     #0c1016;
+  --bg3:     #111820;
+  --green:   #00ff88;
+  --gdim:    #00cc66;
+  --cyan:    #00ccff;
+  --red:     #ff4455;
+  --yellow:  #ffcc00;
+  --border:  #1a2a3a;
+  --text:    #b0c4d4;
+  --dim:     #4a6070;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Courier New', Consolas, monospace;
+  font-size: 13px;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* scanlines */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0px,
+    transparent 3px,
+    rgba(0,255,136,0.012) 3px,
+    rgba(0,255,136,0.012) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ── Header ──────────────────────────────── */
+header {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 11px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  user-select: none;
+}
+
+.logo {
+  font-size: 17px;
+  font-weight: bold;
+  color: var(--green);
+  letter-spacing: 4px;
+  text-shadow: 0 0 12px rgba(0,255,136,.5);
+}
+
+.blink {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  animation: blink 2s infinite;
+}
+
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+
+.hdr-right {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--dim);
+  letter-spacing: 1px;
+}
+
+/* ── Tabs ──────────────────────────────── */
+nav {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  padding: 0 16px;
+}
+
+.tab {
+  padding: 9px 22px;
+  cursor: pointer;
+  color: var(--dim);
+  border-bottom: 2px solid transparent;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  transition: all .15s;
+  user-select: none;
+}
+
+.tab:hover { color: var(--text); }
+.tab.active {
+  color: var(--green);
+  border-bottom-color: var(--green);
+  text-shadow: 0 0 8px rgba(0,255,136,.5);
+}
+
+/* ── Main grid ──────────────────────────── */
+main {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border);
+  min-height: calc(100vh - 78px);
+}
+
+.panel {
+  background: var(--bg);
+  padding: 18px;
+  overflow-y: auto;
+}
+
+.panel-hdr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 12px;
+  margin-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.panel-icon { font-size: 14px; }
+.panel-title {
+  font-size: 10px;
+  letter-spacing: 2.5px;
+  color: var(--dim);
+  text-transform: uppercase;
+}
+
+/* ── Section labels ──────────────────────── */
+.sec {
+  font-size: 10px;
+  color: var(--dim);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin: 14px 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sec::after { content:''; flex:1; height:1px; background:var(--border); }
+
+/* ── Form elements ──────────────────────── */
+textarea, input[type=text], input[type=password] {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 9px 11px;
+  border-radius: 4px;
+  outline: none;
+  transition: border-color .15s;
+}
+textarea { resize: vertical; min-height: 90px; }
+textarea:focus, input:focus { border-color: var(--gdim); }
+
+select {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 5px 9px;
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type=range] {
+  -webkit-appearance: none;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  height: 4px;
+  border-radius: 2px;
+  width: 80px;
+  outline: none;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--green);
+  cursor: pointer;
+}
+
+/* ── Buttons ──────────────────────────── */
+.btn {
+  background: transparent;
+  border: 1px solid var(--green);
+  color: var(--green);
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  padding: 7px 16px;
+  cursor: pointer;
+  border-radius: 4px;
+  text-transform: uppercase;
+  transition: all .15s;
+}
+.btn:hover:not(:disabled) {
+  background: var(--green);
+  color: var(--bg);
+  box-shadow: 0 0 14px rgba(0,255,136,.4);
+}
+.btn:disabled { border-color: var(--dim); color: var(--dim); cursor: not-allowed; }
+
+.btn-stop { border-color: var(--red); color: var(--red); }
+.btn-stop:hover:not(:disabled) {
+  background: var(--red);
+  color: var(--bg);
+  box-shadow: 0 0 14px rgba(255,68,85,.4);
+}
+
+.btn-sm { padding: 4px 11px; font-size: 10px; }
+
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+.lbl { font-size: 10px; color: var(--dim); letter-spacing: 1px; white-space: nowrap; }
+.val { font-size: 11px; min-width: 28px; }
+.val-g { color: var(--green); }
+.val-c { color: var(--cyan); }
+
+/* ── Encryption box ──────────────────────── */
+.enc-box {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin: 10px 0;
+}
+
+.toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 0; }
+
+.toggle { position: relative; width: 36px; height: 18px; flex-shrink: 0; }
+.toggle input { display: none; }
+.toggle-slider {
+  position: absolute; inset: 0;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 9px; cursor: pointer; transition: all .2s;
+}
+.toggle-slider::after {
+  content: '';
+  position: absolute;
+  left: 2px; top: 2px;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--dim);
+  transition: all .2s;
+}
+.toggle input:checked + .toggle-slider {
+  background: rgba(0,255,136,.15);
+  border-color: var(--green);
+}
+.toggle input:checked + .toggle-slider::after {
+  transform: translateX(18px);
+  background: var(--green);
+}
+
+.enc-fields { display: none; margin-top: 8px; }
+.enc-fields.show { display: flex; gap: 8px; align-items: center; }
+
+/* ── QR display ──────────────────────────── */
+#qr-display {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 16px;
+  min-height: 180px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin: 8px 0;
+  position: relative;
+}
+
+#qr-display canvas, #qr-display img {
+  max-width: 100%;
+  image-rendering: pixelated;
+  display: block;
+}
+
+.qr-placeholder {
+  font-size: 11px;
+  color: var(--dim);
+  letter-spacing: 2px;
+}
+
+.frame-info {
+  text-align: center;
+  font-size: 10px;
+  color: var(--dim);
+  letter-spacing: 1.5px;
+  margin-top: 4px;
+  height: 16px;
+}
+
+/* ── Camera ──────────────────────────────── */
+.cam-wrap {
+  position: relative;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 8px 0;
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#cam-video {
+  width: 100%;
+  display: none;
+}
+
+#cam-canvas { display: none; }
+
+.cam-reticle {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%,-50%);
+  width: 160px; height: 160px;
+  border: 1px solid rgba(0,255,136,.4);
+  display: none;
+  pointer-events: none;
+}
+
+.cam-reticle::before,
+.cam-reticle::after {
+  content: '';
+  position: absolute;
+  width: 16px; height: 16px;
+}
+.cam-reticle::before { top:-1px; left:-1px; border-top:2px solid var(--green); border-left:2px solid var(--green); }
+.cam-reticle::after  { bottom:-1px; right:-1px; border-bottom:2px solid var(--green); border-right:2px solid var(--green); }
+
+/* ── Progress ──────────────────────────── */
+.prog-wrap {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  height: 5px;
+  overflow: hidden;
+  margin: 6px 0;
+}
+.prog-bar {
+  height: 100%;
+  background: var(--green);
+  box-shadow: 0 0 8px rgba(0,255,136,.6);
+  transition: width .3s;
+  width: 0;
+}
+.prog-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--dim);
+  letter-spacing: 1px;
+}
+
+/* ── Frame grid ──────────────────────────── */
+.frame-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin: 6px 0;
+  max-height: 72px;
+  overflow-y: auto;
+}
+.fc {
+  width: 13px; height: 13px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  transition: all .15s;
+}
+.fc.ok {
+  background: var(--green);
+  border-color: var(--green);
+  box-shadow: 0 0 3px rgba(0,255,136,.5);
+}
+
+/* ── Output box ──────────────────────────── */
+.out {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 10px;
+  min-height: 72px;
+  font-size: 12px;
+  word-break: break-all;
+  white-space: pre-wrap;
+  margin: 6px 0;
+  color: var(--dim);
+}
+.out.done {
+  border-color: var(--green);
+  color: var(--green);
+}
+.out.err { border-color: var(--red); color: var(--red); }
+
+/* ── Status line ──────────────────────────── */
+.status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: var(--dim);
+  letter-spacing: 1px;
+  margin: 6px 0;
+  min-height: 20px;
+}
+.dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--dim);
+  flex-shrink: 0;
+}
+.dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); animation: blink 1s infinite; }
+.dot.err { background: var(--red); }
+.dot.ok { background: var(--green); box-shadow: 0 0 6px var(--green); animation: none; }
+
+/* ── Audio visualizer ──────────────────────── */
+.viz {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  height: 56px;
+  margin: 8px 0;
+  overflow: hidden;
+}
+.viz canvas { width: 100%; height: 100%; display: block; }
+
+/* ── Mode buttons ──────────────────────────── */
+.mode-row { display: flex; gap: 6px; margin: 8px 0; }
+.mbtn {
+  flex: 1;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--dim);
+  font-family: inherit;
+  font-size: 10px;
+  padding: 6px;
+  cursor: pointer;
+  border-radius: 4px;
+  text-align: center;
+  transition: all .15s;
+  letter-spacing: 1px;
+}
+.mbtn.active { border-color: var(--cyan); color: var(--cyan); background: rgba(0,204,255,.08); }
+
+/* ── Sub-panel visibility ──────────────────── */
+.sub { display: none; }
+.sub.show { display: block; }
+
+/* ── Recv passphrase box ──────────────────── */
+#recv-enc { display: none; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="blink"></div>
+  <div class="logo">AIRGAP TRANSFER</div>
+  <div class="hdr-right">SECURE · OFFLINE · NO NETWORK</div>
+</header>
+
+<nav>
+  <div class="tab active" id="tab-qr" onclick="switchTab('qr')">▣ QR ANIMATION</div>
+  <div class="tab" id="tab-audio" onclick="switchTab('audio')">◎ AUDIO (ggwave)</div>
+</nav>
+
+<main>
+
+  <!-- ===== LEFT: SENDER ===== -->
+  <div class="panel">
+    <div class="panel-hdr">
+      <span class="panel-icon" style="color:var(--green)">▶</span>
+      <span class="panel-title">Sender</span>
+    </div>
+
+    <div class="sec">Payload</div>
+    <textarea id="send-text" placeholder="Enter text to transmit… (up to ~50 KB)"></textarea>
+
+    <!-- Encryption -->
+    <div class="enc-box">
+      <div class="toggle-row">
+        <label class="toggle">
+          <input type="checkbox" id="enc-toggle" onchange="toggleEnc()">
+          <div class="toggle-slider"></div>
+        </label>
+        <span class="lbl">AES-256 ENCRYPTION</span>
+        <span id="enc-lbl" class="lbl" style="margin-left:auto">OFF</span>
+      </div>
+      <div class="enc-fields" id="enc-fields">
+        <input type="password" id="passphrase" placeholder="Passphrase">
+      </div>
+    </div>
+
+    <!-- ── QR sender ── -->
+    <div class="sub show" id="qr-send">
+      <div class="sec">QR Settings</div>
+      <div class="row">
+        <span class="lbl">FPS</span>
+        <input type="range" id="fps-r" min="1" max="8" value="4" oninput="updateFps(this.value)">
+        <span class="val val-g" id="fps-v">4</span>
+        <span class="lbl" style="margin-left:10px">CHUNK</span>
+        <input type="range" id="chunk-r" min="100" max="300" step="50" value="200" oninput="updateChunk(this.value)">
+        <span class="val val-c" id="chunk-v">200 B</span>
+      </div>
+      <div class="row">
+        <button class="btn" id="qr-start" onclick="startQR()">▶ START</button>
+        <button class="btn btn-stop" id="qr-stop" onclick="stopQR()" disabled>■ STOP</button>
+        <span class="lbl" id="qr-send-info" style="margin-left:auto"></span>
+      </div>
+      <div id="qr-display">
+        <span class="qr-placeholder">QR WILL APPEAR HERE</span>
+      </div>
+      <div class="frame-info" id="qr-fi"></div>
+    </div>
+
+    <!-- ── Audio sender ── -->
+    <div class="sub" id="audio-send">
+      <div class="sec">Mode</div>
+      <div class="mode-row">
+        <div class="mbtn active" id="m-aud" onclick="setMode('audible')">AUDIBLE</div>
+        <div class="mbtn" id="m-us" onclick="setMode('ultrasound')">ULTRASOUND</div>
+      </div>
+      <div class="row">
+        <button class="btn" id="aud-send-btn" onclick="sendAudio()">▶ TRANSMIT</button>
+        <span class="lbl" id="aud-send-info" style="margin-left:auto"></span>
+      </div>
+      <div class="sec">Waveform</div>
+      <div class="viz"><canvas id="viz-send"></canvas></div>
+      <div class="status">
+        <div class="dot" id="d-send"></div>
+        <span id="s-send">IDLE</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== RIGHT: RECEIVER ===== -->
+  <div class="panel">
+    <div class="panel-hdr">
+      <span class="panel-icon" style="color:var(--cyan)">◎</span>
+      <span class="panel-title">Receiver</span>
+    </div>
+
+    <!-- Decryption passphrase (shown when needed) -->
+    <div class="enc-box" id="recv-enc">
+      <div class="lbl" style="margin-bottom:8px">DECRYPT PASSPHRASE</div>
+      <input type="password" id="recv-pp" placeholder="Passphrase">
+    </div>
+
+    <!-- ── QR receiver ── -->
+    <div class="sub show" id="qr-recv">
+      <div class="sec">Camera</div>
+      <div class="row">
+        <button class="btn" id="cam-start" onclick="startCam()">◎ START CAMERA</button>
+        <button class="btn btn-stop" id="cam-stop" onclick="stopCam()" disabled>■ STOP</button>
+      </div>
+
+      <div class="cam-wrap" id="cam-wrap">
+        <span class="qr-placeholder" id="cam-ph">CAMERA FEED</span>
+        <video id="cam-video" autoplay playsinline muted></video>
+        <canvas id="cam-canvas"></canvas>
+        <div class="cam-reticle" id="cam-reticle"></div>
+      </div>
+
+      <div class="status">
+        <div class="dot" id="d-cam"></div>
+        <span id="s-cam">IDLE</span>
+      </div>
+
+      <div class="sec">Progress</div>
+      <div class="prog-wrap"><div class="prog-bar" id="prog"></div></div>
+      <div class="prog-labels">
+        <span id="prog-txt">0 / 0 frames</span>
+        <span id="prog-pct">0%</span>
+      </div>
+
+      <div class="sec">Frame Map</div>
+      <div class="frame-grid" id="fgrid"></div>
+
+      <div class="sec">Received Data</div>
+      <div class="out" id="qr-out">Awaiting transmission…</div>
+      <div class="row">
+        <button class="btn btn-sm" onclick="copyOut('qr-out')">⎘ COPY</button>
+        <button class="btn btn-sm" id="qr-dec-btn" style="display:none" onclick="decryptQROut()">⚷ DECRYPT</button>
+      </div>
+    </div>
+
+    <!-- ── Audio receiver ── -->
+    <div class="sub" id="audio-recv">
+      <div class="sec">Microphone</div>
+      <div class="row">
+        <button class="btn" id="mic-start" onclick="startMic()">◎ START MIC</button>
+        <button class="btn btn-stop" id="mic-stop" onclick="stopMic()" disabled>■ STOP</button>
+      </div>
+      <div class="sec">Waveform</div>
+      <div class="viz"><canvas id="viz-recv"></canvas></div>
+      <div class="status">
+        <div class="dot" id="d-recv"></div>
+        <span id="s-recv">IDLE</span>
+      </div>
+      <div class="sec">Received Data</div>
+      <div class="out" id="aud-out">Awaiting transmission…</div>
+      <div class="row">
+        <button class="btn btn-sm" onclick="copyOut('aud-out')">⎘ COPY</button>
+        <button class="btn btn-sm" id="aud-dec-btn" style="display:none" onclick="decryptAudOut()">⚷ DECRYPT</button>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+// ────────────────────────────────────────────────────────────
+// STATE
+// ────────────────────────────────────────────────────────────
+let currentTab = 'qr';
+let qrFrameStrings = [];
+let qrIdx  = 0;
+let qrTimer = null;
+let qrFps   = 4;
+let qrChunk = 200;
+
+let rxFrames   = {};
+let rxTotal    = 0;
+let camStream  = null;
+let camTimer   = null;
+let lastQRData = null;
+
+let ggwave  = null;
+let ggInst  = null;
+let audMode = 'audible';
+
+let micStream = null;
+let micCtx    = null;
+let micProc   = null;
+
+let sendVizAF  = null;
+let recvVizAF  = null;
+
+// ────────────────────────────────────────────────────────────
+// TAB
+// ────────────────────────────────────────────────────────────
+function switchTab(t) {
+  currentTab = t;
+  document.getElementById('tab-qr').classList.toggle('active', t === 'qr');
+  document.getElementById('tab-audio').classList.toggle('active', t === 'audio');
+  document.getElementById('qr-send').classList.toggle('show', t === 'qr');
+  document.getElementById('audio-send').classList.toggle('show', t === 'audio');
+  document.getElementById('qr-recv').classList.toggle('show', t === 'qr');
+  document.getElementById('audio-recv').classList.toggle('show', t === 'audio');
+  if (t === 'audio') initGgwave();
+}
+
+// ────────────────────────────────────────────────────────────
+// ENCRYPTION
+// ────────────────────────────────────────────────────────────
+function toggleEnc() {
+  const on = document.getElementById('enc-toggle').checked;
+  document.getElementById('enc-lbl').textContent = on ? 'ON' : 'OFF';
+  document.getElementById('enc-lbl').style.color  = on ? 'var(--green)' : '';
+  document.getElementById('enc-fields').classList.toggle('show', on);
+  document.getElementById('recv-enc').style.display = on ? 'block' : 'none';
+}
+
+async function encrypt(text, pp) {
+  const enc  = new TextEncoder();
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv   = crypto.getRandomValues(new Uint8Array(12));
+  const km   = await crypto.subtle.importKey('raw', enc.encode(pp), 'PBKDF2', false, ['deriveKey']);
+  const key  = await crypto.subtle.deriveKey(
+    { name:'PBKDF2', salt, iterations:100000, hash:'SHA-256' },
+    km, { name:'AES-GCM', length:256 }, false, ['encrypt']);
+  const ct = await crypto.subtle.encrypt({ name:'AES-GCM', iv }, key, enc.encode(text));
+  const buf = new Uint8Array(16 + 12 + ct.byteLength);
+  buf.set(salt, 0); buf.set(iv, 16); buf.set(new Uint8Array(ct), 28);
+  return btoa(String.fromCharCode(...buf));
+}
+
+async function decrypt(b64, pp) {
+  const buf  = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const salt = buf.slice(0, 16);
+  const iv   = buf.slice(16, 28);
+  const ct   = buf.slice(28);
+  const enc  = new TextEncoder();
+  const km   = await crypto.subtle.importKey('raw', enc.encode(pp), 'PBKDF2', false, ['deriveKey']);
+  const key  = await crypto.subtle.deriveKey(
+    { name:'PBKDF2', salt, iterations:100000, hash:'SHA-256' },
+    km, { name:'AES-GCM', length:256 }, false, ['decrypt']);
+  const pt = await crypto.subtle.decrypt({ name:'AES-GCM', iv }, key, ct);
+  return new TextDecoder().decode(pt);
+}
+
+// ────────────────────────────────────────────────────────────
+// CRC-32
+// ────────────────────────────────────────────────────────────
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[i] = c;
+  }
+  return t;
+})();
+
+function crc32(s) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < s.length; i++)
+    c = CRC_TABLE[(c ^ s.charCodeAt(i)) & 0xFF] ^ (c >>> 8);
+  return ((c ^ 0xFFFFFFFF) >>> 0).toString(16).toUpperCase().padStart(8, '0');
+}
+
+// ────────────────────────────────────────────────────────────
+// QR SETTINGS
+// ────────────────────────────────────────────────────────────
+function updateFps(v) {
+  qrFps = +v;
+  document.getElementById('fps-v').textContent = v;
+  if (qrTimer) { clearInterval(qrTimer); qrTimer = setInterval(nextFrame, 1000 / qrFps); }
+}
+
+function updateChunk(v) {
+  qrChunk = +v;
+  document.getElementById('chunk-v').textContent = v + ' B';
+}
+
+// ────────────────────────────────────────────────────────────
+// QR SENDER
+// ────────────────────────────────────────────────────────────
+async function startQR() {
+  let text = document.getElementById('send-text').value.trim();
+  if (!text) { alert('テキストを入力してください'); return; }
+
+  if (document.getElementById('enc-toggle').checked) {
+    const pp = document.getElementById('passphrase').value;
+    if (!pp) { alert('パスフレーズを入力してください'); return; }
+    try { text = 'ENC:' + await encrypt(text, pp); }
+    catch(e) { alert('暗号化エラー: ' + e.message); return; }
+  }
+
+  // Encode to UTF-8 bytes and split into chunks
+  const bytes = new TextEncoder().encode(text);
+  const chunks = [];
+  for (let i = 0; i < bytes.length; i += qrChunk) {
+    chunks.push(bytes.slice(i, i + qrChunk));
+  }
+
+  const total = chunks.length;
+  qrFrameStrings = chunks.map((chunk, i) => {
+    const b64  = btoa(String.fromCharCode(...chunk));
+    const tot  = total.toString(16).toUpperCase().padStart(4,'0');
+    const idx  = i.toString(16).toUpperCase().padStart(4,'0');
+    const csum = crc32(b64);
+    return `AG:${tot}:${idx}:${csum}:${b64}`;
+  });
+
+  qrIdx = 0;
+  document.getElementById('qr-start').disabled = true;
+  document.getElementById('qr-stop').disabled = false;
+  document.getElementById('qr-send-info').textContent = total + ' FRAMES';
+
+  renderQRFrame(0);
+  qrTimer = setInterval(nextFrame, 1000 / qrFps);
+}
+
+function nextFrame() {
+  qrIdx = (qrIdx + 1) % qrFrameStrings.length;
+  renderQRFrame(qrIdx);
+}
+
+function renderQRFrame(i) {
+  const box = document.getElementById('qr-display');
+  box.innerHTML = '';
+  try {
+    new QRCode(box, {
+      text: qrFrameStrings[i],
+      width: 280, height: 280,
+      colorDark: '#003300',
+      colorLight: '#f0fff4',
+      correctLevel: QRCode.CorrectLevel.L
+    });
+  } catch(e) {
+    box.innerHTML = `<span style="color:var(--red);font-size:11px">QR ERROR – chunk too large</span>`;
+  }
+  document.getElementById('qr-fi').textContent =
+    `FRAME  ${i+1} / ${qrFrameStrings.length}  ·  ${qrFps} FPS`;
+}
+
+function stopQR() {
+  if (qrTimer) { clearInterval(qrTimer); qrTimer = null; }
+  document.getElementById('qr-start').disabled = false;
+  document.getElementById('qr-stop').disabled = true;
+  document.getElementById('qr-send-info').textContent = '';
+  document.getElementById('qr-fi').textContent = '';
+  document.getElementById('qr-display').innerHTML =
+    '<span class="qr-placeholder">QR WILL APPEAR HERE</span>';
+}
+
+// ────────────────────────────────────────────────────────────
+// QR RECEIVER
+// ────────────────────────────────────────────────────────────
+async function startCam() {
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode:'environment', width:{ideal:640}, height:{ideal:480} }
+    });
+    const v = document.getElementById('cam-video');
+    v.srcObject = camStream;
+    v.style.display = 'block';
+    document.getElementById('cam-ph').style.display = 'none';
+    document.getElementById('cam-reticle').style.display = 'block';
+    document.getElementById('cam-start').disabled = true;
+    document.getElementById('cam-stop').disabled = false;
+    setCamStatus('on', 'SCANNING...');
+    camTimer = setInterval(scanFrame, 100);
+  } catch(e) {
+    setCamStatus('err', 'CAMERA ERROR: ' + e.message);
+  }
+}
+
+function stopCam() {
+  if (camTimer) { clearInterval(camTimer); camTimer = null; }
+  if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+  const v = document.getElementById('cam-video');
+  v.style.display = 'none';
+  document.getElementById('cam-ph').style.display = '';
+  document.getElementById('cam-reticle').style.display = 'none';
+  document.getElementById('cam-start').disabled = false;
+  document.getElementById('cam-stop').disabled = true;
+  setCamStatus('', 'STOPPED');
+}
+
+function scanFrame() {
+  const v = document.getElementById('cam-video');
+  if (!v.videoWidth) return;
+  const c = document.getElementById('cam-canvas');
+  c.width = v.videoWidth; c.height = v.videoHeight;
+  const ctx = c.getContext('2d');
+  ctx.drawImage(v, 0, 0);
+  const img = ctx.getImageData(0, 0, c.width, c.height);
+  const code = jsQR(img.data, img.width, img.height, { inversionAttempts:'attemptBoth' });
+  if (code && code.data !== lastQRData) {
+    lastQRData = code.data;
+    parseFrame(code.data);
+  }
+}
+
+function parseFrame(raw) {
+  // Format: AG:TTTT:NNNN:CCCCCCCC:BASE64…
+  const m = raw.match(/^AG:([0-9A-F]{4}):([0-9A-F]{4}):([0-9A-F]{8}):(.+)$/);
+  if (!m) return;
+  const total  = parseInt(m[1], 16);
+  const idx    = parseInt(m[2], 16);
+  const chksum = m[3];
+  const b64    = m[4];
+
+  if (crc32(b64) !== chksum) {
+    setCamStatus('err', `CHECKSUM FAIL  frame ${idx}`);
+    return;
+  }
+
+  if (rxTotal !== total) {
+    rxTotal = total; rxFrames = {};
+    buildGrid(total);
+  }
+
+  if (rxFrames[idx] === undefined) {
+    rxFrames[idx] = b64;
+    document.getElementById(`fc-${idx}`)?.classList.add('ok');
+    const got = Object.keys(rxFrames).length;
+    setProgress(got, total);
+    setCamStatus('on', `RX  ${got} / ${total}`);
+    if (got === total) assembleFrames();
+  }
+}
+
+function buildGrid(n) {
+  const g = document.getElementById('fgrid');
+  g.innerHTML = '';
+  for (let i = 0; i < n; i++) {
+    const c = document.createElement('div');
+    c.className = 'fc'; c.id = `fc-${i}`; c.title = `#${i}`;
+    g.appendChild(c);
+  }
+}
+
+function setProgress(got, total) {
+  const pct = total ? Math.round(got / total * 100) : 0;
+  document.getElementById('prog').style.width = pct + '%';
+  document.getElementById('prog-txt').textContent = `${got} / ${total} frames`;
+  document.getElementById('prog-pct').textContent = pct + '%';
+}
+
+async function assembleFrames() {
+  stopCam();
+  setCamStatus('ok', 'ASSEMBLING...');
+  try {
+    const allBytes = [];
+    for (let i = 0; i < rxTotal; i++) {
+      if (!rxFrames[i]) throw new Error(`Missing frame ${i}`);
+      const bin = atob(rxFrames[i]);
+      for (let j = 0; j < bin.length; j++) allBytes.push(bin.charCodeAt(j));
+    }
+    let text = new TextDecoder().decode(new Uint8Array(allBytes));
+
+    if (text.startsWith('ENC:')) {
+      const enc = text.slice(4);
+      const pp  = document.getElementById('recv-pp').value;
+      if (!pp) {
+        document.getElementById('recv-enc').style.display = 'block';
+        document.getElementById('qr-out').dataset.enc = enc;
+        document.getElementById('qr-dec-btn').style.display = '';
+        setQROut('ENCRYPTED – ENTER PASSPHRASE AND CLICK DECRYPT', 'err');
+        setCamStatus('err', 'PASSPHRASE NEEDED');
+        return;
+      }
+      text = await decrypt(enc, pp);
+    }
+    setQROut(text, 'done');
+    setCamStatus('ok', 'COMPLETE ✓');
+  } catch(e) {
+    setCamStatus('err', 'ERROR: ' + e.message);
+  }
+}
+
+async function decryptQROut() {
+  const pp  = document.getElementById('recv-pp').value;
+  const enc = document.getElementById('qr-out').dataset.enc;
+  if (!pp) { alert('パスフレーズを入力してください'); return; }
+  try {
+    const text = await decrypt(enc, pp);
+    setQROut(text, 'done');
+    setCamStatus('ok', 'DECRYPTED ✓');
+    document.getElementById('qr-dec-btn').style.display = 'none';
+  } catch(e) {
+    setQROut('DECRYPT ERROR – wrong passphrase?', 'err');
+  }
+}
+
+function setQROut(text, cls) {
+  const el = document.getElementById('qr-out');
+  el.className = 'out ' + (cls || '');
+  el.textContent = text;
+}
+
+function setCamStatus(dot, msg) {
+  const d = document.getElementById('d-cam');
+  d.className = 'dot' + (dot === 'on' ? ' on' : dot === 'err' ? ' err' : dot === 'ok' ? ' ok' : '');
+  document.getElementById('s-cam').textContent = msg;
+}
+
+// ────────────────────────────────────────────────────────────
+// ggwave
+// ────────────────────────────────────────────────────────────
+function initGgwave() {
+  if (ggwave) return;
+  setSendStatus('on', 'LOADING ggwave…');
+  if (typeof ggwave_factory === 'undefined') {
+    setSendStatus('err', 'ggwave NOT LOADED  (need HTTPS/localhost)');
+    document.getElementById('s-recv').textContent = 'ggwave NOT LOADED';
+    return;
+  }
+  ggwave_factory().then(mod => {
+    ggwave = mod;
+    // Match the AudioContext sample rate
+    const tmp = new (window.AudioContext || window.webkitAudioContext)();
+    const sr  = tmp.sampleRate;
+    tmp.close();
+    const p = mod.getDefaultParameters();
+    p.sampleRateInp = sr;
+    p.sampleRateOut = sr;
+    ggInst = mod.init(p);
+    setSendStatus('', 'ggwave READY');
+    document.getElementById('s-recv').textContent = 'ggwave READY';
+  }).catch(e => {
+    setSendStatus('err', 'ggwave INIT ERROR');
+    console.error(e);
+  });
+}
+
+function setMode(m) {
+  audMode = m;
+  document.getElementById('m-aud').classList.toggle('active', m === 'audible');
+  document.getElementById('m-us').classList.toggle('active',  m === 'ultrasound');
+}
+
+function setSendStatus(dot, msg) {
+  const d = document.getElementById('d-send');
+  d.className = 'dot' + (dot === 'on' ? ' on' : dot === 'err' ? ' err' : dot === 'ok' ? ' ok' : '');
+  document.getElementById('s-send').textContent = msg;
+}
+
+async function sendAudio() {
+  if (!ggwave) { await initGgwave(); if (!ggwave) return; }
+  let text = document.getElementById('send-text').value.trim();
+  if (!text) { alert('テキストを入力してください'); return; }
+
+  if (document.getElementById('enc-toggle').checked) {
+    const pp = document.getElementById('passphrase').value;
+    if (!pp) { alert('パスフレーズを入力してください'); return; }
+    try { text = 'ENC:' + await encrypt(text, pp); }
+    catch(e) { alert('暗号化エラー: ' + e.message); return; }
+  }
+
+  // ggwave protocol IDs: 1 = AUDIBLE_FAST, 4 = ULTRASOUND_FAST
+  const proto = audMode === 'ultrasound' ? 4 : 1;
+  try {
+    const wave = ggwave.encode(ggInst, text, proto, 10);
+    const actx = new (window.AudioContext || window.webkitAudioContext)();
+    const buf  = actx.createBuffer(1, wave.length, actx.sampleRate);
+    buf.copyToChannel(wave, 0);
+
+    const src = actx.createBufferSource();
+    src.buffer = buf;
+
+    const an = actx.createAnalyser();
+    an.fftSize = 256;
+    src.connect(an);
+    an.connect(actx.destination);
+
+    if (sendVizAF) cancelAnimationFrame(sendVizAF);
+    drawFreqViz(an, 'viz-send', true);
+
+    src.start();
+    setSendStatus('on', 'TRANSMITTING…');
+    document.getElementById('aud-send-btn').disabled = true;
+    document.getElementById('aud-send-info').textContent =
+      `${text.length} chars · ${audMode.toUpperCase()}`;
+
+    src.onended = () => {
+      setSendStatus('ok', 'COMPLETE ✓');
+      document.getElementById('aud-send-btn').disabled = false;
+      if (sendVizAF) { cancelAnimationFrame(sendVizAF); sendVizAF = null; }
+    };
+  } catch(e) {
+    setSendStatus('err', 'ERROR: ' + e.message);
+  }
+}
+
+// ────────────────────────────────────────────────────────────
+// MICROPHONE / ggwave RECEIVER
+// ────────────────────────────────────────────────────────────
+async function startMic() {
+  if (!ggwave) { await initGgwave(); if (!ggwave) return; }
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    micCtx    = new (window.AudioContext || window.webkitAudioContext)();
+    const src = micCtx.createMediaStreamSource(micStream);
+    const an  = micCtx.createAnalyser();
+    an.fftSize = 1024;
+
+    micProc = micCtx.createScriptProcessor(4096, 1, 1);
+    micProc.onaudioprocess = e => {
+      if (!ggwave || !ggInst) return;
+      try {
+        const res = ggwave.decode(ggInst, e.inputBuffer.getChannelData(0));
+        if (res && res.length > 0) onAudioReceived(res);
+      } catch(_) {}
+    };
+
+    src.connect(an);
+    src.connect(micProc);
+    micProc.connect(micCtx.destination);
+
+    if (recvVizAF) cancelAnimationFrame(recvVizAF);
+    drawWaveViz(an, 'viz-recv');
+
+    document.getElementById('mic-start').disabled = true;
+    document.getElementById('mic-stop').disabled  = false;
+    setRecvStatus('on', 'LISTENING…');
+  } catch(e) {
+    setRecvStatus('err', 'MIC ERROR: ' + e.message);
+  }
+}
+
+function stopMic() {
+  if (micProc) { micProc.disconnect(); micProc = null; }
+  if (micCtx)  { micCtx.close(); micCtx = null; }
+  if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  if (recvVizAF) { cancelAnimationFrame(recvVizAF); recvVizAF = null; }
+  document.getElementById('mic-start').disabled = false;
+  document.getElementById('mic-stop').disabled  = true;
+  setRecvStatus('', 'STOPPED');
+}
+
+async function onAudioReceived(bytes) {
+  let text = new TextDecoder().decode(bytes);
+  if (text.startsWith('ENC:')) {
+    const enc = text.slice(4);
+    const pp  = document.getElementById('recv-pp').value;
+    if (!pp) {
+      document.getElementById('recv-enc').style.display = 'block';
+      document.getElementById('aud-out').dataset.enc = enc;
+      document.getElementById('aud-dec-btn').style.display = '';
+      setAudOut('ENCRYPTED – ENTER PASSPHRASE AND CLICK DECRYPT', 'err');
+      setRecvStatus('err', 'PASSPHRASE NEEDED');
+      return;
+    }
+    try { text = await decrypt(enc, pp); }
+    catch(e) { setRecvStatus('err', 'DECRYPT ERROR'); return; }
+  }
+  setAudOut(text, 'done');
+  setRecvStatus('ok', 'RECEIVED ✓');
+}
+
+async function decryptAudOut() {
+  const pp  = document.getElementById('recv-pp').value;
+  const enc = document.getElementById('aud-out').dataset.enc;
+  if (!pp) { alert('パスフレーズを入力してください'); return; }
+  try {
+    const text = await decrypt(enc, pp);
+    setAudOut(text, 'done');
+    setRecvStatus('ok', 'DECRYPTED ✓');
+    document.getElementById('aud-dec-btn').style.display = 'none';
+  } catch(e) {
+    setAudOut('DECRYPT ERROR – wrong passphrase?', 'err');
+  }
+}
+
+function setRecvStatus(dot, msg) {
+  const d = document.getElementById('d-recv');
+  d.className = 'dot' + (dot === 'on' ? ' on' : dot === 'err' ? ' err' : dot === 'ok' ? ' ok' : '');
+  document.getElementById('s-recv').textContent = msg;
+}
+
+function setAudOut(text, cls) {
+  const el = document.getElementById('aud-out');
+  el.className = 'out ' + (cls || '');
+  el.textContent = text;
+}
+
+// ────────────────────────────────────────────────────────────
+// VISUALIZERS
+// ────────────────────────────────────────────────────────────
+function drawFreqViz(analyser, canvasId, isSend) {
+  const canvas = document.getElementById(canvasId);
+  const ctx    = canvas.getContext('2d');
+  const buf    = new Uint8Array(analyser.frequencyBinCount);
+
+  function frame() {
+    sendVizAF = requestAnimationFrame(frame);
+    analyser.getByteFrequencyData(buf);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#111820';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const bw = canvas.width / buf.length * 2;
+    for (let i = 0; i < buf.length; i++) {
+      const h = buf[i] / 255 * canvas.height;
+      const v = buf[i];
+      ctx.fillStyle = `rgb(0,${v},${Math.floor(v*0.4)})`;
+      ctx.fillRect(i * (bw+1), canvas.height - h, bw, h);
+    }
+  }
+  frame();
+}
+
+function drawWaveViz(analyser, canvasId) {
+  const canvas = document.getElementById(canvasId);
+  const ctx    = canvas.getContext('2d');
+  const buf    = new Uint8Array(analyser.frequencyBinCount);
+
+  function frame() {
+    recvVizAF = requestAnimationFrame(frame);
+    analyser.getByteTimeDomainData(buf);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#111820';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = '#00ccff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    const sw = canvas.width / buf.length;
+    for (let i = 0; i < buf.length; i++) {
+      const y = (buf[i] / 128) * (canvas.height / 2);
+      i === 0 ? ctx.moveTo(i * sw, y) : ctx.lineTo(i * sw, y);
+    }
+    ctx.stroke();
+  }
+  frame();
+}
+
+// ────────────────────────────────────────────────────────────
+// COPY
+// ────────────────────────────────────────────────────────────
+function copyOut(id) {
+  const text = document.getElementById(id).textContent;
+  navigator.clipboard.writeText(text).catch(() => {});
+}
+
+// ────────────────────────────────────────────────────────────
+// INIT: size canvases
+// ────────────────────────────────────────────────────────────
+function sizeCanvases() {
+  ['viz-send','viz-recv'].forEach(id => {
+    const c = document.getElementById(id);
+    c.width  = c.parentElement.clientWidth;
+    c.height = c.parentElement.clientHeight;
+  });
+}
+window.addEventListener('load', sizeCanvases);
+window.addEventListener('resize', sizeCanvases);
+
+// Load ggwave script dynamically (needs HTTPS/localhost)
+(function () {
+  const s = document.createElement('script');
+  s.src = 'https://ggwave-js.ggerganov.com/ggwave.js';
+  s.onerror = () => console.warn('[airgap] ggwave.js failed to load');
+  document.head.appendChild(s);
+})();
+</script>
+</body>
+</html>
