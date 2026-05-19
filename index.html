@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AIRGAP TRANSFER</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
   <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -636,6 +636,7 @@ input[type=range]::-webkit-slider-thumb {
 // ────────────────────────────────────────────────────────────
 let currentTab = 'qr';
 let qrFrameStrings = [];
+let qrDataUrls = [];   // pre-generated PNG data URLs for each frame
 let qrIdx  = 0;
 let qrTimer = null;
 let qrFps   = 4;
@@ -748,6 +749,17 @@ function updateChunk(v) {
 // ────────────────────────────────────────────────────────────
 // QR SENDER
 // ────────────────────────────────────────────────────────────
+
+// Generate a single QR frame as a PNG data URL (Promise-based, no async DOM hacks)
+function qrToDataURL(text) {
+  return QRCode.toDataURL(text, {
+    width: 300,
+    margin: 2,
+    errorCorrectionLevel: 'L',
+    color: { dark: '#003300', light: '#f0fff4' }
+  });
+}
+
 async function startQR() {
   let text = document.getElementById('send-text').value.trim();
   if (!text) { alert('テキストを入力してください'); return; }
@@ -759,7 +771,7 @@ async function startQR() {
     catch(e) { alert('暗号化エラー: ' + e.message); return; }
   }
 
-  // Encode to UTF-8 bytes and split into chunks
+  // Split into chunks
   const bytes = new TextEncoder().encode(text);
   const chunks = [];
   for (let i = 0; i < bytes.length; i += qrChunk) {
@@ -775,40 +787,51 @@ async function startQR() {
     return `AG:${tot}:${idx}:${csum}:${b64}`;
   });
 
-  qrIdx = 0;
+  // Show loading indicator while pre-generating all frames
   document.getElementById('qr-start').disabled = true;
+  document.getElementById('qr-stop').disabled = true;
+  document.getElementById('qr-display').innerHTML =
+    `<span class="qr-placeholder">GENERATING ${total} FRAMES…</span>`;
+  document.getElementById('qr-fi').textContent = '';
+
+  // Pre-generate all frames as data URLs (sequential to avoid UI jank)
+  qrDataUrls = [];
+  for (const frameStr of qrFrameStrings) {
+    try {
+      const url = await qrToDataURL(frameStr);
+      qrDataUrls.push(url);
+    } catch(e) {
+      document.getElementById('qr-display').innerHTML =
+        `<span style="color:var(--red);font-size:11px">QR ERROR: ${e.message}</span>`;
+      document.getElementById('qr-start').disabled = false;
+      return;
+    }
+  }
+
+  // Prepare a single <img> for animation (src-swap is instant)
+  const box = document.getElementById('qr-display');
+  box.innerHTML = '<img id="qr-img" style="max-width:100%;image-rendering:pixelated;display:block;margin:auto">';
+
+  qrIdx = 0;
+  showQRFrame(0);
   document.getElementById('qr-stop').disabled = false;
   document.getElementById('qr-send-info').textContent = total + ' FRAMES';
-
-  renderQRFrame(0);
-  qrTimer = setInterval(nextFrame, 1000 / qrFps);
+  qrTimer = setInterval(() => {
+    qrIdx = (qrIdx + 1) % qrDataUrls.length;
+    showQRFrame(qrIdx);
+  }, 1000 / qrFps);
 }
 
-function nextFrame() {
-  qrIdx = (qrIdx + 1) % qrFrameStrings.length;
-  renderQRFrame(qrIdx);
-}
-
-function renderQRFrame(i) {
-  const box = document.getElementById('qr-display');
-  box.innerHTML = '';
-  try {
-    new QRCode(box, {
-      text: qrFrameStrings[i],
-      width: 280, height: 280,
-      colorDark: '#003300',
-      colorLight: '#f0fff4',
-      correctLevel: QRCode.CorrectLevel.L
-    });
-  } catch(e) {
-    box.innerHTML = `<span style="color:var(--red);font-size:11px">QR ERROR – chunk too large</span>`;
-  }
+function showQRFrame(i) {
+  const img = document.getElementById('qr-img');
+  if (img) img.src = qrDataUrls[i];
   document.getElementById('qr-fi').textContent =
-    `FRAME  ${i+1} / ${qrFrameStrings.length}  ·  ${qrFps} FPS`;
+    `FRAME  ${i + 1} / ${qrDataUrls.length}  ·  ${qrFps} FPS`;
 }
 
 function stopQR() {
   if (qrTimer) { clearInterval(qrTimer); qrTimer = null; }
+  qrDataUrls = [];
   document.getElementById('qr-start').disabled = false;
   document.getElementById('qr-stop').disabled = true;
   document.getElementById('qr-send-info').textContent = '';
