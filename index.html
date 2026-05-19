@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AIRGAP TRANSFER</title>
+  <script src="./ggwave.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
   <style>
@@ -1027,8 +1028,8 @@ function initGgwave() {
   if (ggwave) return;
   setSendStatus('on', 'LOADING ggwave…');
   if (typeof ggwave_factory === 'undefined') {
-    setSendStatus('err', 'ggwave NOT LOADED  (need HTTPS/localhost)');
-    document.getElementById('s-recv').textContent = 'ggwave NOT LOADED';
+    setSendStatus('err', 'ggwave.js load error');
+    document.getElementById('s-recv').textContent = 'ggwave.js load error';
     return;
   }
   ggwave_factory().then(mod => {
@@ -1270,13 +1271,6 @@ function sizeCanvases() {
 window.addEventListener('load', sizeCanvases);
 window.addEventListener('resize', sizeCanvases);
 
-// Load ggwave script dynamically (needs HTTPS/localhost)
-(function () {
-  const s = document.createElement('script');
-  s.src = 'https://ggwave-js.ggerganov.com/ggwave.js';
-  s.onerror = () => console.warn('[airgap] ggwave.js failed to load');
-  document.head.appendChild(s);
-})();
 </script>
 </body>
 </html>
