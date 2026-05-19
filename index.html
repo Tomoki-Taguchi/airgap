@@ -844,7 +844,7 @@ async function sendAudio() {
     catch(e) { alert('暗号化エラー: ' + e.message); return; }
   }
 
-  const proto = audMode === 'ultrasound' ? 4 : 1;
+  const proto = audMode === 'ultrasound' ? 4 : 0;
   try {
     const raw  = ggwave.encode(ggInst, text, proto, 10);
     const wave = Float32Array.from(
