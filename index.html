@@ -1077,7 +1077,12 @@ async function sendAudio() {
   // ggwave protocol IDs: 1 = AUDIBLE_FAST, 4 = ULTRASOUND_FAST
   const proto = audMode === 'ultrasound' ? 4 : 1;
   try {
-    const wave = ggwave.encode(ggInst, text, proto, 10);
+    const raw  = ggwave.encode(ggInst, text, proto, 10);
+    // encode() returns raw bytes (Int8Array/Uint8Array) representing Float32 PCM.
+    // Reinterpret as Float32Array, then copy out of WASM memory.
+    const wave = Float32Array.from(
+      new Float32Array(raw.buffer, raw.byteOffset, raw.byteLength / 4)
+    );
     const actx = new (window.AudioContext || window.webkitAudioContext)();
     const buf  = actx.createBuffer(1, wave.length, actx.sampleRate);
     buf.copyToChannel(wave, 0);
