@@ -185,7 +185,7 @@ input[type=range]::-webkit-slider-thumb {
   justify-content: center;
   align-items: center;
   padding: 16px;
-  min-height: 200px;
+  min-height: 380px;
   background: var(--bg3);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -234,6 +234,8 @@ input[type=range]::-webkit-slider-thumb {
 .mode-row { display: flex; gap: 6px; margin: 8px 0; }
 .mbtn { flex: 1; background: var(--bg3); border: 1px solid var(--border); color: var(--dim); font-family: inherit; font-size: 10px; padding: 6px; cursor: pointer; border-radius: 4px; text-align: center; transition: all .15s; letter-spacing: 1px; }
 .mbtn.active { border-color: var(--cyan); color: var(--cyan); background: rgba(0,204,255,.08); }
+.sel-ctrl { background:var(--bg3); border:1px solid var(--border); color:var(--cyan); font-family:inherit; font-size:10px; padding:4px 8px; border-radius:4px; outline:none; cursor:pointer; letter-spacing:1px; }
+.sel-ctrl option { background:var(--bg3); }
   </style>
 </head>
 <body>
@@ -282,11 +284,23 @@ input[type=range]::-webkit-slider-thumb {
     <div class="sec">QR Settings</div>
     <div class="row">
       <span class="lbl">FPS</span>
-      <input type="range" id="fps-r" min="1" max="8" value="4" oninput="updateFps(this.value)">
-      <span class="val val-g" id="fps-v">4</span>
-      <span class="lbl" style="margin-left:10px">CHUNK</span>
-      <input type="range" id="chunk-r" min="100" max="300" step="50" value="200" oninput="updateChunk(this.value)">
-      <span class="val val-c" id="chunk-v">200 B</span>
+      <input type="range" id="fps-r" min="1" max="30" value="30" oninput="updateFps(this.value)">
+      <span class="val val-g" id="fps-v">30</span>
+      <span class="lbl" style="margin-left:12px">VERSION</span>
+      <select id="qrver-sel" class="sel-ctrl" onchange="updateQRVersion(+this.value)">
+        <option value="15">v15</option>
+        <option value="20">v20</option>
+        <option value="25">v25</option>
+        <option value="30" selected>v30</option>
+        <option value="35">v35</option>
+        <option value="40">v40</option>
+      </select>
+    </div>
+    <div class="row">
+      <span class="lbl">PAYLOAD</span>
+      <span class="val val-c" id="chunk-v">1726 B</span>
+      <span class="lbl" style="margin-left:12px">ESTIMATED</span>
+      <span class="val val-g" id="est-bps">50.7 kB/s</span>
     </div>
     <div class="row">
       <button class="btn"      id="qr-start" onclick="startQR()">▶ START</button>
@@ -410,23 +424,33 @@ input[type=range]::-webkit-slider-thumb {
 
 <script>
 // ────────────────────────────────────────────────────────────
+// CONSTANTS
+// ────────────────────────────────────────────────────────────
+const QR_BYTE_L = {15:520, 20:858, 25:1273, 30:1735, 35:2306, 40:2953};
+const FRAME_HDR = 9; // AG(2) + proto(1) + total(2) + idx(2) + crc16(2)
+
+// ────────────────────────────────────────────────────────────
 // STATE
 // ────────────────────────────────────────────────────────────
 let currentMode = 'qr';
 let currentRole = 'send';
 
-let qrFrameStrings = [];
-let qrDataUrls = [];
-let qrIdx   = 0;
-let qrTimer = null;
-let qrFps   = 4;
-let qrChunk = 200;
+let qrVersion      = 30;
+let qrFps          = 30;
+let qrChunk        = QR_BYTE_L[30] - FRAME_HDR; // 1726
+let qrDataUrls     = [];
+let qrIdx          = 0;
+let qrRafId        = null;
+let qrLastFrameTime = 0;
 
-let rxFrames   = {};
-let rxTotal    = 0;
-let camStream  = null;
-let camTimer   = null;
-let lastQRData = null;
+let rxFrames      = {};
+let rxTotal       = 0;
+let rxProtocol    = null; // 'text' | 'binary'
+let camStream     = null;
+let scanRafId     = null;
+let lastScanTs    = 0;
+let lastQRData    = null;
+let lastBinaryKey = null;
 
 let ggwave  = null;
 let ggInst  = null;
@@ -529,116 +553,151 @@ function crc32(s) {
 }
 
 // ────────────────────────────────────────────────────────────
+// CRC-16 / CCITT (binary protocol)
+// ────────────────────────────────────────────────────────────
+function crc16(bytes) {
+  let c = 0xFFFF;
+  for (let i = 0; i < bytes.length; i++) {
+    c ^= bytes[i] << 8;
+    for (let j = 0; j < 8; j++) c = (c & 0x8000) ? ((c << 1) ^ 0x1021) : (c << 1);
+    c &= 0xFFFF;
+  }
+  return c;
+}
+
+// ────────────────────────────────────────────────────────────
 // QR SETTINGS
 // ────────────────────────────────────────────────────────────
 function updateFps(v) {
   qrFps = +v;
   document.getElementById('fps-v').textContent = v;
-  if (qrTimer) { clearInterval(qrTimer); qrTimer = setInterval(nextQRFrame, 1000 / qrFps); }
+  updateEstimated();
 }
 
-function updateChunk(v) {
-  qrChunk = +v;
-  document.getElementById('chunk-v').textContent = v + ' B';
+function updateQRVersion(v) {
+  qrVersion = v;
+  qrChunk = (QR_BYTE_L[v] || 1273) - FRAME_HDR;
+  document.getElementById('chunk-v').textContent = qrChunk + ' B';
+  updateEstimated();
+}
+
+function updateEstimated() {
+  const kbps = (qrFps * qrChunk / 1024).toFixed(1);
+  document.getElementById('est-bps').textContent = kbps + ' kB/s';
 }
 
 // ────────────────────────────────────────────────────────────
-// QR SENDER
+// QR SENDER (binary protocol v2)
 // ────────────────────────────────────────────────────────────
-function qrToDataURL(text) {
-  try {
-    const qr = qrcode(0, 'L');
-    qr.addData(text, 'Byte');
-    qr.make();
-    const mc     = qr.getModuleCount();
-    const cell   = Math.max(3, Math.floor(280 / mc));
-    const margin = cell * 4;
-    const size   = mc * cell + margin * 2;
-    const cv     = document.createElement('canvas');
-    cv.width = size; cv.height = size;
-    const ctx    = cv.getContext('2d');
-    ctx.fillStyle = '#f0fff4';
-    ctx.fillRect(0, 0, size, size);
-    ctx.fillStyle = '#003300';
-    for (let r = 0; r < mc; r++)
-      for (let c = 0; c < mc; c++)
-        if (qr.isDark(r, c))
-          ctx.fillRect(margin + c * cell, margin + r * cell, cell, cell);
-    return Promise.resolve(cv.toDataURL('image/png'));
-  } catch(e) {
-    return Promise.reject(e);
-  }
+function buildBinaryFrame(idx, total, payloadBytes) {
+  const frame = new Uint8Array(FRAME_HDR + payloadBytes.length);
+  frame[0] = 0x41; frame[1] = 0x47; // 'AG'
+  frame[2] = 0x02;                   // binary protocol
+  frame[3] = (total >> 8) & 0xFF; frame[4] = total & 0xFF;
+  frame[5] = (idx   >> 8) & 0xFF; frame[6] = idx   & 0xFF;
+  const crc = crc16(payloadBytes);
+  frame[7] = (crc >> 8) & 0xFF; frame[8] = crc & 0xFF;
+  frame.set(payloadBytes, FRAME_HDR);
+  return frame;
+}
+
+function frameToQRDataURL(frameBytes) {
+  return new Promise((resolve, reject) => {
+    try {
+      let str = '';
+      for (let i = 0; i < frameBytes.length; i++) str += String.fromCharCode(frameBytes[i]);
+      const qr = qrcode(qrVersion, 'L');
+      qr.addData(str, 'Byte');
+      qr.make();
+      const mc     = qr.getModuleCount();
+      const cell   = Math.max(3, Math.floor(550 / mc));
+      const margin = cell * 4;
+      const size   = mc * cell + margin * 2;
+      const cv     = document.createElement('canvas');
+      cv.width = size; cv.height = size;
+      const ctx    = cv.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, size, size);
+      ctx.fillStyle = '#000000';
+      for (let r = 0; r < mc; r++)
+        for (let c = 0; c < mc; c++)
+          if (qr.isDark(r, c))
+            ctx.fillRect(margin + c * cell, margin + r * cell, cell, cell);
+      resolve(cv.toDataURL('image/png'));
+    } catch(e) { reject(e); }
+  });
 }
 
 async function startQR() {
-  let text = document.getElementById('qr-send-text').value.trim();
-  if (!text) { alert('テキストを入力してください'); return; }
+  let rawText = document.getElementById('qr-send-text').value.trim();
+  if (!rawText) { alert('テキストを入力してください'); return; }
 
+  let payload;
   if (document.getElementById('qr-enc-toggle').checked) {
     const pp = document.getElementById('qr-passphrase').value;
     if (!pp) { alert('パスフレーズを入力してください'); return; }
-    try { text = 'ENC:' + await encrypt(text, pp); }
+    try { payload = new TextEncoder().encode('ENC:' + await encrypt(rawText, pp)); }
     catch(e) { alert('暗号化エラー: ' + e.message); return; }
+  } else {
+    payload = new TextEncoder().encode(rawText);
   }
 
-  const bytes = new TextEncoder().encode(text);
-  const chunks = [];
-  for (let i = 0; i < bytes.length; i += qrChunk)
-    chunks.push(bytes.slice(i, i + qrChunk));
-
-  const total = chunks.length;
-  qrFrameStrings = chunks.map((chunk, i) => {
-    const b64  = btoa(String.fromCharCode(...chunk));
-    const tot  = total.toString(16).toUpperCase().padStart(4,'0');
-    const idx  = i.toString(16).toUpperCase().padStart(4,'0');
-    return `AG:${tot}:${idx}:${crc32(b64)}:${b64}`;
-  });
+  const total = Math.ceil(payload.length / qrChunk);
+  const frames = [];
+  for (let i = 0; i < total; i++)
+    frames.push(buildBinaryFrame(i, total, payload.slice(i * qrChunk, (i + 1) * qrChunk)));
 
   document.getElementById('qr-start').disabled = true;
   document.getElementById('qr-stop').disabled  = true;
-  document.getElementById('qr-display').innerHTML =
-    `<span class="qr-placeholder">GENERATING ${total} FRAMES…</span>`;
+  document.getElementById('qr-send-info').textContent = '';
+  const dispEl = document.getElementById('qr-display');
+  dispEl.innerHTML = `<span class="qr-placeholder">GENERATING 0 / ${total}…</span>`;
   document.getElementById('qr-fi').textContent = '';
 
   qrDataUrls = [];
-  for (const frameStr of qrFrameStrings) {
-    try {
-      qrDataUrls.push(await qrToDataURL(frameStr));
-    } catch(e) {
-      document.getElementById('qr-display').innerHTML =
-        `<span style="color:var(--red);font-size:11px">QR ERROR: ${e.message}</span>`;
+  for (let i = 0; i < frames.length; i++) {
+    const ph = dispEl.querySelector('.qr-placeholder');
+    if (ph) ph.textContent = `GENERATING ${i + 1} / ${total}…`;
+    try { qrDataUrls.push(await frameToQRDataURL(frames[i])); }
+    catch(e) {
+      dispEl.innerHTML = `<span style="color:var(--red);font-size:11px">QR ERROR: ${e.message}</span>`;
       document.getElementById('qr-start').disabled = false;
       return;
     }
   }
 
-  document.getElementById('qr-display').innerHTML =
+  dispEl.innerHTML =
     '<img id="qr-img" style="max-width:100%;image-rendering:pixelated;display:block;margin:auto">';
-
   qrIdx = 0;
   showQRFrame(0);
-  document.getElementById('qr-stop').disabled  = false;
-  document.getElementById('qr-send-info').textContent = total + ' FRAMES';
-  qrTimer = setInterval(() => {
-    qrIdx = (qrIdx + 1) % qrDataUrls.length;
-    showQRFrame(qrIdx);
-  }, 1000 / qrFps);
+  document.getElementById('qr-stop').disabled = false;
+  document.getElementById('qr-send-info').textContent =
+    `${total} FRAMES · ${(payload.length / 1024).toFixed(1)} kB`;
+
+  qrLastFrameTime = 0;
+  qrRafId = requestAnimationFrame(qrAnimLoop);
 }
 
-function nextQRFrame() {
-  qrIdx = (qrIdx + 1) % qrDataUrls.length;
-  showQRFrame(qrIdx);
+function qrAnimLoop(ts) {
+  if (!qrDataUrls.length) return;
+  const interval = 1000 / qrFps;
+  if (ts - qrLastFrameTime >= interval) {
+    qrLastFrameTime = ts - ((ts - qrLastFrameTime) % interval);
+    qrIdx = (qrIdx + 1) % qrDataUrls.length;
+    showQRFrame(qrIdx);
+  }
+  qrRafId = requestAnimationFrame(qrAnimLoop);
 }
 
 function showQRFrame(i) {
   const img = document.getElementById('qr-img');
   if (img) img.src = qrDataUrls[i];
   document.getElementById('qr-fi').textContent =
-    `FRAME  ${i + 1} / ${qrDataUrls.length}  ·  ${qrFps} FPS`;
+    `FRAME  ${i + 1} / ${qrDataUrls.length}  ·  ${qrFps} FPS  ·  v${qrVersion}`;
 }
 
 function stopQR() {
-  if (qrTimer) { clearInterval(qrTimer); qrTimer = null; }
+  if (qrRafId) { cancelAnimationFrame(qrRafId); qrRafId = null; }
   qrDataUrls = [];
   document.getElementById('qr-start').disabled = false;
   document.getElementById('qr-stop').disabled  = true;
@@ -654,7 +713,7 @@ function stopQR() {
 async function startCam() {
   try {
     camStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode:'environment', width:{ideal:640}, height:{ideal:480} }
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
     });
     const v = document.getElementById('cam-video');
     v.srcObject = camStream;
@@ -664,14 +723,15 @@ async function startCam() {
     document.getElementById('cam-start').disabled = true;
     document.getElementById('cam-stop').disabled  = false;
     setCamStatus('on', 'SCANNING...');
-    camTimer = setInterval(scanFrame, 100);
+    lastScanTs = 0;
+    scanRafId = requestAnimationFrame(scanLoop);
   } catch(e) {
     setCamStatus('err', 'CAMERA ERROR: ' + e.message);
   }
 }
 
 function stopCam() {
-  if (camTimer) { clearInterval(camTimer); camTimer = null; }
+  if (scanRafId) { cancelAnimationFrame(scanRafId); scanRafId = null; }
   if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
   const v = document.getElementById('cam-video');
   v.style.display = 'none';
@@ -682,6 +742,15 @@ function stopCam() {
   setCamStatus('', 'STOPPED');
 }
 
+function scanLoop(ts) {
+  if (!camStream) return;
+  scanRafId = requestAnimationFrame(scanLoop);
+  if (ts - lastScanTs >= 33) { // ~30 fps
+    lastScanTs = ts;
+    scanFrame();
+  }
+}
+
 function scanFrame() {
   const v = document.getElementById('cam-video');
   if (!v.videoWidth) return;
@@ -690,10 +759,41 @@ function scanFrame() {
   const ctx = c.getContext('2d');
   ctx.drawImage(v, 0, 0);
   const img  = ctx.getImageData(0, 0, c.width, c.height);
-  const code = jsQR(img.data, img.width, img.height, { inversionAttempts:'attemptBoth' });
-  if (code && code.data !== lastQRData) {
+  const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
+  if (!code) return;
+
+  const bd = code.binaryData;
+  if (bd && bd.length >= FRAME_HDR && bd[0] === 0x41 && bd[1] === 0x47 && bd[2] === 0x02) {
+    parseBinaryFrame(new Uint8Array(bd));
+  } else if (code.data !== lastQRData) {
     lastQRData = code.data;
     parseQRFrame(code.data);
+  }
+}
+
+function parseBinaryFrame(data) {
+  const total = (data[3] << 8) | data[4];
+  const idx   = (data[5] << 8) | data[6];
+  const rxCrc = (data[7] << 8) | data[8];
+  const payload = data.slice(FRAME_HDR);
+
+  const key = `${total}:${idx}:${rxCrc}`;
+  if (key === lastBinaryKey) return;
+  lastBinaryKey = key;
+
+  if (crc16(payload) !== rxCrc) { setCamStatus('err', `CRC FAIL frame ${idx}`); return; }
+
+  if (rxTotal !== total || rxProtocol !== 'binary') {
+    rxTotal = total; rxFrames = {}; rxProtocol = 'binary'; buildGrid(total);
+  }
+
+  if (rxFrames[idx] === undefined) {
+    rxFrames[idx] = payload;
+    document.getElementById(`fc-${idx}`)?.classList.add('ok');
+    const got = Object.keys(rxFrames).length;
+    setProgress(got, total);
+    setCamStatus('on', `RX  ${got} / ${total}`);
+    if (got === total) assembleBinaryFrames();
   }
 }
 
@@ -706,7 +806,9 @@ function parseQRFrame(raw) {
 
   if (crc32(b64) !== m[3]) { setCamStatus('err', `CHECKSUM FAIL frame ${idx}`); return; }
 
-  if (rxTotal !== total) { rxTotal = total; rxFrames = {}; buildGrid(total); }
+  if (rxTotal !== total || rxProtocol !== 'text') {
+    rxTotal = total; rxFrames = {}; rxProtocol = 'text'; buildGrid(total);
+  }
 
   if (rxFrames[idx] === undefined) {
     rxFrames[idx] = b64;
@@ -733,6 +835,37 @@ function setProgress(got, total) {
   document.getElementById('prog').style.width = pct + '%';
   document.getElementById('prog-txt').textContent = `${got} / ${total} frames`;
   document.getElementById('prog-pct').textContent = pct + '%';
+}
+
+async function assembleBinaryFrames() {
+  stopCam();
+  setCamStatus('ok', 'ASSEMBLING...');
+  try {
+    let totalBytes = 0;
+    for (let i = 0; i < rxTotal; i++) {
+      if (!rxFrames[i]) throw new Error(`Missing frame ${i}`);
+      totalBytes += rxFrames[i].length;
+    }
+    const allBytes = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (let i = 0; i < rxTotal; i++) { allBytes.set(rxFrames[i], offset); offset += rxFrames[i].length; }
+    let text = new TextDecoder().decode(allBytes);
+    if (text.startsWith('ENC:')) {
+      const enc = text.slice(4);
+      const pp = document.getElementById('qr-recv-pp').value;
+      if (!pp) {
+        document.getElementById('qr-recv-pp-box').classList.add('show');
+        document.getElementById('qr-out').dataset.enc = enc;
+        document.getElementById('qr-dec-btn').style.display = '';
+        setQROut('ENCRYPTED – ENTER PASSPHRASE AND CLICK DECRYPT', 'err');
+        setCamStatus('err', 'PASSPHRASE NEEDED');
+        return;
+      }
+      text = await decrypt(enc, pp);
+    }
+    setQROut(text, 'done');
+    setCamStatus('ok', 'COMPLETE ✓');
+  } catch(e) { setCamStatus('err', 'ERROR: ' + e.message); }
 }
 
 async function assembleFrames() {
